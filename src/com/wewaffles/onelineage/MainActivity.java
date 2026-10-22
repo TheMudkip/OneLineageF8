@@ -294,10 +294,23 @@ public class MainActivity extends Activity {
                 "7zz"
             };
             File filesDir = getFilesDir();
+            // Large jars are only skipped when this exact install already
+            // extracted them; any app update (new lastUpdateTime) re-extracts
+            // everything, otherwise patched jars from a new build never deploy.
+            long installStamp = 0;
+            try {
+                installStamp = getPackageManager().getPackageInfo(getPackageName(), 0).lastUpdateTime;
+            } catch (Exception ignored) {}
+            File stampFile = new File(filesDir, ".assets_stamp");
+            boolean sameInstall = false;
+            try (BufferedReader r = new BufferedReader(new java.io.FileReader(stampFile))) {
+                sameInstall = Long.parseLong(r.readLine().trim()) == installStamp;
+            } catch (Exception ignored) {}
+            if (!sameInstall) appendLog("App updated - re-extracting all engine assets (incl. patched jars)...");
             for (String asset : assets) {
                 File target = new File(filesDir, asset);
-                if (target.exists() && target.length() > 0 && asset.endsWith(".jar")) {
-                    continue; // Skip re-extracting large jars if already present
+                if (sameInstall && target.exists() && target.length() > 0 && asset.endsWith(".jar")) {
+                    continue; // already extracted by this install
                 }
                 try (InputStream in = getAssets().open(asset);
                      OutputStream out = new FileOutputStream(target)) {
@@ -312,6 +325,9 @@ public class MainActivity extends Activity {
                     appendLog("Error unpacking " + asset + ": " + e.getMessage());
                 }
             }
+            try (OutputStream out = new FileOutputStream(stampFile)) {
+                out.write(Long.toString(installStamp).getBytes());
+            } catch (Exception ignored) {}
             if (isRootGranted) {
                 try {
                     Runtime.getRuntime().exec(new String[]{

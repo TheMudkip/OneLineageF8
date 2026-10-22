@@ -13,6 +13,8 @@ tailf() { sec "$1 (last ${2:-150} lines)"; [ -f "$1" ] && tail -n "${2:-150}" "$
   sec "date / props"; date; getprop ro.product.model; getprop ro.build.display.id; getprop sys.boot_completed
   echo "selinux: $(getenforce)"; echo "busybox: $BB"; echo "running as: $(id)"
   ls -l /system/bin/su /system/xbin/su /data/adb/ksud 2>&1
+  sec "staged engine files (md5)"
+  for f in services_patched.jar framework_patched.jar zygote_exec master_prepare.sh; do echo "$(md5sum $STAGE/$f 2>/dev/null | cut -c1-12)  $f"; done
   sec "processes"
   ps -A -o PID,PPID,USER,NAME,ARGS 2>/dev/null | grep -aiE "zygote|system_server|surfaceflinger|bootanim|servicemanager|vold|app_process|master_inner|unshare" | grep -v grep
   SS=$(pidof system_server | awk '{print $1}')

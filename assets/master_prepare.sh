@@ -98,11 +98,13 @@ if [ -f "$STAGE/services_patched.jar" ]; then
     $BB umount -l "$ROOTFS/system/framework/services.jar" 2>/dev/null || true
     $BB mount --bind "$STAGE/services_patched.jar" "$ROOTFS/system/framework/services.jar"
     echo "Bound services_patched.jar -> $ROOTFS/system/framework/services.jar"
+    echo "  services_patched.jar md5 $(md5sum "$STAGE/services_patched.jar" | cut -c1-12)"
 fi
 if [ -f "$STAGE/framework_patched.jar" ]; then
     $BB umount -l "$ROOTFS/system/framework/framework.jar" 2>/dev/null || true
     $BB mount --bind "$STAGE/framework_patched.jar" "$ROOTFS/system/framework/framework.jar"
     echo "Bound framework_patched.jar -> $ROOTFS/system/framework/framework.jar"
+    echo "  framework_patched.jar md5 $(md5sum "$STAGE/framework_patched.jar" | cut -c1-12)"
 fi
 if [ -f "$STAGE/libaudio_aidl_conversion_common_cpp_patched.so" ]; then
     $BB umount -l "$ROOTFS/system/lib64/libaudio_aidl_conversion_common_cpp.so" 2>/dev/null || true
