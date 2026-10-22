@@ -723,6 +723,21 @@ if ls "$ROOTFS/system/apex/com.google.android.tethering"* >/dev/null 2>&1 \
     mount_payload "tethering" "com.android.tethering"
 else
     echo "tethering: using the host's module"
+    # When PMS reconciles the host tethering APEX (Google-signed NetworkStack
+    # inside) with the GSI's /system/priv-app/NetworkStack (RestlessOS- or
+    # LineageOS-signed), both declare android:sharedUserId="android.uid.networkstack"
+    # and the signature mismatch is fatal:
+    #   FATAL EXCEPTION IN SYSTEM PROCESS: main
+    #   IllegalStateException: Signature mismatch on system package
+    #     com.google.android.networkstack.tethering ... for shared user
+    #     SharedUserSetting{... android.uid.networkstack/1073}
+    # Hide the GSI's copy by bind-mounting an empty tmpfs over its directory;
+    # the host's APEX-provided NetworkStack remains, so no package is lost.
+    NS_DIR="$ROOTFS/system/priv-app/NetworkStack"
+    if [ -d "$NS_DIR" ] && ! mount | grep -q " $NS_DIR "; then
+        $BB mount -t tmpfs -o size=1M tmpfs "$NS_DIR" && \
+            echo "Hid GSI's NetworkStack ($NS_DIR) - host tethering APEX signatures own this shared UID"
+    fi
 fi
 # Otherwise tethering is NOT mounted from the GSI. Its BPF programs/maps under /sys/fs/bpf
 # are loaded at boot by the HOST's tethering module (Google mainline, e.g.
