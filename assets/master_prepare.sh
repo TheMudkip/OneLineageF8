@@ -710,14 +710,30 @@ mount_payload "i18n" "com.android.i18n"
 mount_payload "runtime" "com.android.runtime"
 mount_payload "sdkext" "com.android.sdkext"
 mount_payload "nfcservices" "com.android.nfcservices"
-# tethering: chosen per GSI. A Google-signed GSI module (com.google.android.
-# tethering) shares the host's signing identity, so it can be used as long as the
-# BPF maps it needs are pinned by the host. That avoids the host-module/GSI
-# mismatches below (e.g. the host's newer module calls the host DnsResolver's
-# getUnstableInterface(), which the resolver refuses for the container).
+# tethering: chosen per GSI, three cases.
+#  1) A TrebleDroid-based GSI (phhusson lineage: RestlessOS, TrebleDroid, ...)
+#     ships treble-overlay-tethering-nobpf.apk which activates when
+#     persist.sys.phh.tethering.nobpf=1. The overlay makes the connectivity
+#     service tolerate missing BPF maps ("Failed initialization BpfMaps,
+#     doing without it"). Use the GSI's own tethering + the property; every
+#     package stays on the GSI's single key, and the host-BPF mismatch
+#     (host-signed vs GSI-signed with same android.uid.networkstack shared
+#     UID) never comes up.
+#  2) A Google-signed GSI (com.google.android.tethering) shares the host's
+#     signing identity, so it can be used as long as the BPF maps it needs
+#     are pinned by the host.
+#  3) Fall back to the host's tethering module. The GSI's NetworkStack APK
+#     then collides with the host tethering APEX on android.uid.networkstack
+#     and must be hidden.
 BPF=/sys/fs/bpf/netd_shared
+NOBPF_OVERLAY="$ROOTFS/system/product/overlay/treble-overlay-tethering-nobpf.apk"
 echo "host BPF permission maps: $(ls $BPF 2>/dev/null | grep -c permission) ($(ls $BPF 2>/dev/null | grep permission | tr '\n' ' '))"
-if ls "$ROOTFS/system/apex/com.google.android.tethering"* >/dev/null 2>&1 \
+if [ -f "$NOBPF_OVERLAY" ]; then
+    echo "tethering: using the GSI's own module (TrebleDroid nobpf overlay available; same signer as GSI's NetworkStack)"
+    setprop persist.sys.phh.tethering.nobpf 1 2>/dev/null || true
+    getprop persist.sys.phh.tethering.nobpf | awk '{print "persist.sys.phh.tethering.nobpf = " $0}'
+    mount_payload "tethering" "com.android.tethering"
+elif ls "$ROOTFS/system/apex/com.google.android.tethering"* >/dev/null 2>&1 \
    && [ -e "$BPF/map_netd_uid_permission_map" ] && [ -e "$BPF/map_netd_uid_permission_chunk_map" ]; then
     echo "tethering: using the GSI's Google-signed module (host pins the maps it needs)"
     mount_payload "tethering" "com.android.tethering"
