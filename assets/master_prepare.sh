@@ -686,7 +686,21 @@ mount_payload "i18n" "com.android.i18n"
 mount_payload "runtime" "com.android.runtime"
 mount_payload "sdkext" "com.android.sdkext"
 mount_payload "nfcservices" "com.android.nfcservices"
-# tethering: NOT mounted from the GSI. Its BPF programs/maps under /sys/fs/bpf
+# tethering: chosen per GSI. A Google-signed GSI module (com.google.android.
+# tethering) shares the host's signing identity, so it can be used as long as the
+# BPF maps it needs are pinned by the host. That avoids the host-module/GSI
+# mismatches below (e.g. the host's newer module calls the host DnsResolver's
+# getUnstableInterface(), which the resolver refuses for the container).
+BPF=/sys/fs/bpf/netd_shared
+echo "host BPF permission maps: $(ls $BPF 2>/dev/null | grep -c permission) ($(ls $BPF 2>/dev/null | grep permission | tr '\n' ' '))"
+if ls "$ROOTFS/system/apex/com.google.android.tethering"* >/dev/null 2>&1 \
+   && [ -e "$BPF/map_netd_uid_permission_map" ] && [ -e "$BPF/map_netd_uid_permission_chunk_map" ]; then
+    echo "tethering: using the GSI's Google-signed module (host pins the maps it needs)"
+    mount_payload "tethering" "com.android.tethering"
+else
+    echo "tethering: using the host's module"
+fi
+# Otherwise tethering is NOT mounted from the GSI. Its BPF programs/maps under /sys/fs/bpf
 # are loaded at boot by the HOST's tethering module (Google mainline, e.g.
 # 372038420), and the GSI's AOSP build (370399999) expects maps the host never
 # pinned -> system_server dies in BpfNetMaps ("Cannot open uid permission map",
