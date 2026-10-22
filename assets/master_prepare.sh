@@ -20,11 +20,35 @@ done
 
 echo "=== 3. Mounting system.raw if needed ==="
 if mount | grep -q "$ROOTFS "; then
+    STALE=0
+    # Any loop device whose backing file is NOT the current system.raw is a
+    # leftover from an earlier GSI (install_gsi.bat replaced system.raw but
+    # the previous mount kept the old inode open). Pivoting into that leaves
+    # /system/lib64/libandroid_runtime.so pointing at the OLD GSI's lib while
+    # the newly staged jars bind in from the current one - zygote then crashes
+    # on a JNI signature mismatch.
+    CURRENT_INO=$(stat -c %i "$STAGE/system.raw" 2>/dev/null)
+    for l in $($BB losetup -a | grep -F "$ROOTFS" | cut -d: -f1); do
+        BACKING=$($BB losetup "$l" 2>/dev/null | sed -n 's/.*(\(.*\)).*/\1/p')
+        [ -z "$BACKING" ] && BACKING=$($BB losetup -l "$l" 2>/dev/null | awk 'NR==2 {print $6}')
+        BACK_INO=$(stat -c %i "$BACKING" 2>/dev/null)
+        if [ -n "$CURRENT_INO" ] && [ -n "$BACK_INO" ] && [ "$CURRENT_INO" != "$BACK_INO" ]; then
+            echo "Rootfs mount is stale (loop $l backs inode $BACK_INO, system.raw is now inode $CURRENT_INO). Unmounting..."
+            STALE=1
+            break
+        fi
+    done
     if [ ! -f "$ROOTFS/system/bin/sh" ] || [ ! -f "$ROOTFS/init.environ.rc" ]; then
         echo "Rootfs mount is invalid or stale. Unmounting..."
+        STALE=1
+    fi
+    if [ "$STALE" = 1 ]; then
         while mount | grep -q "$ROOTFS"; do
             $BB umount -l "$ROOTFS" 2>/dev/null || true
             sleep 0.1
+        done
+        for l in $($BB losetup -a | grep "system.raw" | cut -d: -f1); do
+            $BB losetup -d "$l" 2>/dev/null || true
         done
     else
         echo "Rootfs already mounted and healthy."
