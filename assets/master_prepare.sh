@@ -634,7 +634,12 @@ mount_payload "i18n" "com.android.i18n"
 mount_payload "runtime" "com.android.runtime"
 mount_payload "sdkext" "com.android.sdkext"
 mount_payload "nfcservices" "com.android.nfcservices"
-mount_payload "tethering" "com.android.tethering"
+# tethering: NOT mounted from the GSI. Its BPF programs/maps under /sys/fs/bpf
+# are loaded at boot by the HOST's tethering module (Google mainline, e.g.
+# 372038420), and the GSI's AOSP build (370399999) expects maps the host never
+# pinned -> system_server dies in BpfNetMaps ("Cannot open uid permission map",
+# ENOENT). Step 9 binds the host's /apex/com.android.tethering instead, whose
+# connectivity code matches the maps in the kernel.
 mount_payload "crashrecovery" "com.android.crashrecovery"
 mount_payload "cellbroadcast" "com.android.cellbroadcast"
 mount_payload "extservices" "com.android.extservices"
