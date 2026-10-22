@@ -2,3 +2,4 @@ build/
 keystore/
 backups_*/
 *.idsig
+res/values/build_info.xml

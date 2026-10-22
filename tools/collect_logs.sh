@@ -11,7 +11,8 @@ sec() { echo; echo "================ $1"; }
 tailf() { sec "$1 (last ${2:-150} lines)"; [ -f "$1" ] && tail -n "${2:-150}" "$1" || echo "(missing)"; }
 {
   sec "date / props"; date; getprop ro.product.model; getprop ro.build.display.id; getprop sys.boot_completed
-  echo "selinux: $(getenforce)"; echo "busybox: $BB"
+  echo "selinux: $(getenforce)"; echo "busybox: $BB"; echo "running as: $(id)"
+  ls -l /system/bin/su /system/xbin/su /data/adb/ksud 2>&1
   sec "processes"
   ps -A -o PID,PPID,USER,NAME,ARGS 2>/dev/null | grep -aiE "zygote|system_server|surfaceflinger|bootanim|servicemanager|vold|app_process|master_inner|unshare" | grep -v grep
   SS=$(pidof system_server | awk '{print $1}')
