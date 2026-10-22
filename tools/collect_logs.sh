@@ -4,7 +4,7 @@
 #   adb shell su -c "sh /data/local/tmp/collect_logs.sh"
 #   adb pull /data/local/tmp/ol_debug.txt
 STAGE=/data/local/tmp/lineage_stage
-OUT=/data/local/tmp/ol_debug.txt
+OUT=${OUT:-/data/local/tmp/ol_debug.txt}
 BB=$(ls /data/adb/ksu/bin/busybox /data/adb/magisk/busybox /data/adb/ap/bin/busybox 2>/dev/null | head -n1)
 [ -n "$BB" ] || BB=busybox
 sec() { echo; echo "================ $1"; }
