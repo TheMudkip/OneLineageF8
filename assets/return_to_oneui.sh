@@ -40,6 +40,7 @@ fi
 echo "=== [3/5] Unmounting Container Overlays ==="
 umount -l /data/local/tmp/lineage_stage/rootfs/* 2>/dev/null || true
 umount -l /data/local/tmp/lineage_stage/rootfs/apex/* 2>/dev/null || true
+umount -l /data/local/tmp/lineage_stage/product_overlay 2>/dev/null || true
 while mount | grep -q "/data/local/tmp/lineage_stage/rootfs"; do
     umount -l /data/local/tmp/lineage_stage/rootfs 2>/dev/null || true
     sleep 0.1

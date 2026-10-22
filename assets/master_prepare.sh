@@ -103,7 +103,24 @@ fi
 # Android 17 Samsung builds also preinstall an APEX on /product
 # (com.google.android.gmssystem). Bind it if the GSI has a product/apex dir;
 # otherwise the apex-info-list filter (step 9b) drops the entry.
-PRODUCT_APEX="$(in_rootfs /product)/apex"
+# Host apexd reports every active APEX to the container's PackageManager, which
+# aborts boot if any reported path can't be opened - so the host's /product/apex
+# must exist in the container even when the GSI has no product/apex dir (Google's
+# GSI doesn't). In that case lay a tmpfs-backed overlay over the GSI's product
+# partition (its files stay visible, the image is untouched) to create the dir.
+PRODUCT_DIR="$(in_rootfs /product)"
+PRODUCT_APEX="$PRODUCT_DIR/apex"
+if [ -d /product/apex ] && [ ! -d "$PRODUCT_APEX" ] && [ -d "$PRODUCT_DIR" ]; then
+    OV="$STAGE/product_overlay"
+    mkdir -p "$OV"
+    mount | grep -q " $OV " || $BB mount -t tmpfs tmpfs "$OV"
+    mkdir -p "$OV/upper/apex" "$OV/work"
+    if mount -t overlay overlay -o "lowerdir=$PRODUCT_DIR,upperdir=$OV/upper,workdir=$OV/work" "$PRODUCT_DIR" 2>/dev/null; then
+        echo "Overlaid $PRODUCT_DIR to add an apex/ mountpoint"
+    else
+        echo "!!! WARNING: could not overlay $PRODUCT_DIR - host /product/apex APEXes will be missing"
+    fi
+fi
 if [ -d /product/apex ] && [ -d "$PRODUCT_APEX" ]; then
     mount | grep -q " $PRODUCT_APEX " || $BB mount --bind /product/apex "$PRODUCT_APEX"
     echo "Bound host /product/apex -> $PRODUCT_APEX"
