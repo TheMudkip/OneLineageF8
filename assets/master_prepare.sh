@@ -48,7 +48,19 @@ mkdir -p "$ROOTFS/postinstall" "$ROOTFS/dev" "$ROOTFS/proc" "$ROOTFS/sys" \
 
 echo "=== 4. Setting up Core System Bind Mounts ==="
 mount | grep -q "$ROOTFS/proc " || $BB mount -t proc proc "$ROOTFS/proc"
-mount | grep -q "$ROOTFS/sys " || $BB mount -t sysfs sysfs "$ROOTFS/sys"
+# Bind the host's whole /sys tree (like /dev below), not a fresh sysfs: Android 17
+# system_server needs the submounts - cgroup v2 at /sys/fs/cgroup (zygote's
+# createProcessGroup() for system_server fails with ENOENT without it), plus
+# /sys/fs/bpf (netd maps) and /sys/fs/selinux. rprivate so unmounting the
+# container copy on return never propagates to the host's /sys.
+if mount | grep -q "$ROOTFS/sys " && [ ! -e "$ROOTFS/sys/fs/cgroup/cgroup.controllers" ]; then
+    $BB umount -l "$ROOTFS/sys" 2>/dev/null || true   # stale plain sysfs from an older run
+fi
+if ! mount | grep -q "$ROOTFS/sys "; then
+    $BB mount --rbind /sys "$ROOTFS/sys"
+    $BB mount --make-rprivate "$ROOTFS/sys"
+fi
+[ -e "$ROOTFS/sys/fs/cgroup/cgroup.controllers" ] && echo "cgroup v2 visible in container" || echo "!!! WARNING: /sys/fs/cgroup not visible in container"
 
 if [ ! -e /dev/binderfs/binder ]; then
     mount -t binder binder /dev/binderfs 2>/dev/null || true
