@@ -114,5 +114,17 @@ echo "[Pivoted Root] App storage sweeper started..."
 echo "[Pivoted Root] Cleaning stale sockets..."
 rm -f /dev/socket/zygote /dev/socket/usap_pool_primary 2>/dev/null || true
 
+# zygote_exec carries fixed classpaths (tools/zygote_classpath_*.env). A jar
+# listed there but missing from this rootfs means NoClassDefFoundError in
+# zygote preload, so report any before launching.
+echo "[Pivoted Root] Checking zygote classpaths..."
+cp_missing=0
+for cpvar in BOOTCLASSPATH SYSTEMSERVERCLASSPATH STANDALONE_SYSTEMSERVER_JARS; do
+    cpval=$(grep -ao "${cpvar}=[^[:cntrl:]]*" /data/zygote_exec | head -n1 | cut -d= -f2)
+    for jar in $(echo "$cpval" | tr ':' ' '); do
+        [ -f "$jar" ] || { echo "[Pivoted Root] MISSING $cpvar jar: $jar"; cp_missing=$((cp_missing + 1)); }
+    done
+done
+echo "[Pivoted Root] classpath check: $cp_missing missing"
 echo "[Pivoted Root] Launching LineageOS Zygote & SystemServer via zygote_exec..."
 exec /data/zygote_exec

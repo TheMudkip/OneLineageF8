@@ -63,3 +63,20 @@ python3 tools/graft_dex.py framework.jar fw_built.jar  assets/framework_patched.
 adb shell su -c "cat /apex/apex-info-list.xml" > apex-info-list.xml
 python3 tools/make_clean_apex_list.py apex-info-list.xml assets/clean_apex_info_list.xml
 ```
+
+## zygote_exec classpaths
+`assets/zygote_exec` is a ~130-instruction hand-written aarch64 binary. It creates the
+zygote/usap sockets on fds 3/4, sends stdio to /dev/null, and `execve`s `app_process64`
+with a **fixed** environment, including `BOOTCLASSPATH` and `SYSTEMSERVERCLASSPATH`.
+The 23.2 lists are missing Android 17 jars (`framework-telecom`, `framework-conscrypt-nsc`,
+`framework-npumanager`, `framework-anomaly-detector`, `framework-uprobestats`,
+`framework-webapp`, `service-telecom`, `service-npumanager`, `service-anomaly-detector`,
+`service-uprobestats-bridge`). That made zygote die in preload with
+`NoClassDefFoundError` in `SystemServiceRegistry`, leaving the phone stuck on the boot animation.
+
+`tools/build_zygote_exec.py` rewrites only the environment table, from
+`tools/zygote_classpath_lineage24.env` (derived from the GSI's `etc/classpaths/*.pb`
+fragments). It re-encodes the one `adr x2, envp` and fixes the PT_LOAD size. Under
+emulation, the rebuilt binary makes the same syscalls as the original apart from
+the classpath strings. Before launching, `master_inner.sh` now logs any classpath
+jar missing from the container.
