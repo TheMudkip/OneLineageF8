@@ -83,15 +83,30 @@ mount | grep -q "$ROOTFS/vendor_dlkm " || $BB mount --bind /vendor_dlkm "$ROOTFS
 # tries to parse those exact paths inside this namespace. Keep the apex
 # directories identical to what host apexd sees (an empty tmpfs or the GSI's
 # own .capex layout makes PMS abort with "Unable to parse" at boot).
-if [ -d /system_ext/apex ]; then
-    mkdir -p "$ROOTFS/system_ext/apex"
-    mount | grep -q "$ROOTFS/system_ext/apex " || $BB mount --bind /system_ext/apex "$ROOTFS/system_ext/apex"
+# Resolve a path *inside the rootfs*. GSIs make /system_ext and /product
+# absolute symlinks (/system/system_ext, /system/product); followed from the
+# host they point at the HOST's /system/..., so binds must use the resolved
+# in-rootfs target or they silently land on the host instead.
+in_rootfs() {
+    _l=$(readlink "$ROOTFS$1" 2>/dev/null)
+    case "$_l" in
+        "") echo "$ROOTFS$1" ;;
+        /*) echo "$ROOTFS$_l" ;;
+        *)  echo "$ROOTFS$(dirname "$1")/$_l" ;;
+    esac
+}
+SYSEXT_APEX="$(in_rootfs /system_ext)/apex"
+if [ -d /system_ext/apex ] && [ -d "$SYSEXT_APEX" ]; then
+    mount | grep -q " $SYSEXT_APEX " || $BB mount --bind /system_ext/apex "$SYSEXT_APEX"
+    echo "Bound host /system_ext/apex -> $SYSEXT_APEX"
 fi
 # Android 17 Samsung builds also preinstall an APEX on /product
-# (com.google.android.gmssystem). The GSI's /product -> /system/product, so bind
-# the host's /product/apex there or PMS can't parse the path apexd reports.
-if [ -d /product/apex ] && [ -d "$ROOTFS/system/product/apex" ]; then
-    mount | grep -q "$ROOTFS/system/product/apex " || $BB mount --bind /product/apex "$ROOTFS/system/product/apex"
+# (com.google.android.gmssystem). Bind it if the GSI has a product/apex dir;
+# otherwise the apex-info-list filter (step 9b) drops the entry.
+PRODUCT_APEX="$(in_rootfs /product)/apex"
+if [ -d /product/apex ] && [ -d "$PRODUCT_APEX" ]; then
+    mount | grep -q " $PRODUCT_APEX " || $BB mount --bind /product/apex "$PRODUCT_APEX"
+    echo "Bound host /product/apex -> $PRODUCT_APEX"
 fi
 mount | grep -q "$ROOTFS/mnt " || $BB mount --rbind /mnt "$ROOTFS/mnt"
 if [ -f "$STAGE/services_patched.jar" ]; then
@@ -703,6 +718,28 @@ for a in /apex/*; do
         echo "Bound $base -> $ROOTFS/apex/$base"
     fi
 done
+
+echo "=== 9b. Filtering apex-info-list to paths that resolve in the container ==="
+# PackageManager aborts boot ("Unable to parse <path>") on any listed APEX it
+# can't open, so drop entries whose modulePath doesn't exist inside the rootfs
+# (checked via chroot, so the GSI's own symlinks are honoured).
+AIL="$ROOTFS/apex/apex-info-list.xml"
+if [ -f "$AIL" ] && ! $BB chroot "$ROOTFS" /system/bin/sh -c "[ -e /system/build.prop ]" 2>/dev/null; then
+    echo "  chroot test unavailable - leaving apex-info-list unfiltered"
+elif [ -f "$AIL" ]; then
+    { head -n 2 "$AIL" | grep -v "<apex-info "; } > "$AIL.new"
+    grep "<apex-info " "$AIL" | while IFS= read -r line; do
+        mp=$(echo "$line" | sed -n 's/.* modulePath="\([^"]*\)".*/\1/p')
+        if $BB chroot "$ROOTFS" /system/bin/sh -c "[ -e '$mp' ]" 2>/dev/null; then
+            echo "$line" >> "$AIL.new"
+        else
+            echo "  dropped (not in container): $mp"
+        fi
+    done
+    echo "</apex-info-list>" >> "$AIL.new"
+    mv -f "$AIL.new" "$AIL"; chmod 644 "$AIL"
+    echo "apex-info-list: $(grep -c '<apex-info ' "$AIL") entries"
+fi
 
 # PermissionController patch, second pass. The same block near step 4 runs
 # before the apex set is mounted, so find(1) finds nothing and Samsung's
