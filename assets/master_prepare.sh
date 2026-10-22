@@ -586,20 +586,40 @@ fi
 chmod 644 "$ROOTFS/apex/apex-info-list.xml" 2>/dev/null || true
 
 echo "=== 8. Direct Mounting Extracted APEX Payloads ==="
+# Payload images are cached in $STAGE; they belong to one specific system.raw.
+# Drop the cache when the image changes (e.g. LineageOS -> Google GSI).
+RAW_STAMP=$(stat -c '%s %Y' "$STAGE/system.raw" 2>/dev/null)
+if [ "$(cat "$STAGE/payload_cache.stamp" 2>/dev/null)" != "$RAW_STAMP" ]; then
+    echo "system.raw changed - clearing cached APEX payloads"
+    rm -f "$STAGE"/*_payload.img
+    echo "$RAW_STAMP" > "$STAGE/payload_cache.stamp"
+fi
+GSI_ID=$(grep -m1 "^ro.build.display.id=" "$ROOTFS/system/build.prop" 2>/dev/null | cut -d= -f2)
+echo "GSI: ${GSI_ID:-unknown} ($(grep -m1 '^ro.build.flavor=\|^ro.system.build.type=' "$ROOTFS/system/build.prop" 2>/dev/null | cut -d= -f2))"
 mount_payload() {
     NAME="$1"
     TARGET="$2"
     IMG="$STAGE/${NAME}_payload.img"
     DEST="$ROOTFS/apex/$TARGET"
     if [ ! -f "$IMG" ]; then
-        CAPEX="$ROOTFS/system/apex/com.android.${NAME}.capex"
-        APEX="$ROOTFS/system/apex/com.android.${NAME}.apex"
-        if [ -f "$CAPEX" ]; then
-            $BB unzip -p "$CAPEX" original_apex > "$STAGE/temp_${NAME}.apex" 2>/dev/null
-            $BB unzip -p "$STAGE/temp_${NAME}.apex" apex_payload.img > "$IMG" 2>/dev/null
-            rm -f "$STAGE/temp_${NAME}.apex"
-        elif [ -f "$APEX" ]; then
-            $BB unzip -p "$APEX" apex_payload.img > "$IMG" 2>/dev/null
+        # AOSP/LineageOS name these com.android.<name>.{capex,apex}; Google's
+        # GSI uses com.google.android.<name>.apex (often compressed despite the
+        # extension). Detect compression by content, not by filename.
+        SRC=""
+        for c in "com.android.${NAME}.capex" "com.android.${NAME}.apex" \
+                 "com.google.android.${NAME}.capex" "com.google.android.${NAME}_compressed.apex" \
+                 "com.google.android.${NAME}.apex"; do
+            [ -f "$ROOTFS/system/apex/$c" ] && { SRC="$ROOTFS/system/apex/$c"; break; }
+        done
+        if [ -n "$SRC" ]; then
+            if $BB unzip -l "$SRC" 2>/dev/null | grep -q " original_apex$"; then
+                $BB unzip -p "$SRC" original_apex > "$STAGE/temp_${NAME}.apex" 2>/dev/null
+                $BB unzip -p "$STAGE/temp_${NAME}.apex" apex_payload.img > "$IMG" 2>/dev/null
+                rm -f "$STAGE/temp_${NAME}.apex"
+            else
+                $BB unzip -p "$SRC" apex_payload.img > "$IMG" 2>/dev/null
+            fi
+            [ -s "$IMG" ] || rm -f "$IMG"
         fi
     fi
     [ -f "$IMG" ] || return 0

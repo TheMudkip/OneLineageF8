@@ -114,17 +114,37 @@ echo "[Pivoted Root] App storage sweeper started..."
 echo "[Pivoted Root] Cleaning stale sockets..."
 rm -f /dev/socket/zygote /dev/socket/usap_pool_primary 2>/dev/null || true
 
-# zygote_exec carries fixed classpaths (tools/zygote_classpath_*.env). A jar
-# listed there but missing from this rootfs means NoClassDefFoundError in
-# zygote preload, so report any before launching.
-echo "[Pivoted Root] Checking zygote classpaths..."
+# Classpaths are derived at runtime from what is actually mounted in this
+# container (system + APEX classpath fragments), exactly as init does with
+# derive_classpath on a real boot - so any GSI / host-APEX mix gets matching
+# BOOTCLASSPATH etc. zygote_exec is built with --inherit-env and passes this
+# environment straight to app_process64.
+echo "[Pivoted Root] Deriving classpaths..."
+mkdir -p /data/system/environ
+CPF=/data/system/environ/classpath
+rm -f "$CPF"
+/apex/com.android.sdkext/bin/derive_classpath "$CPF" > /data/derive_classpath.log 2>&1
+if ! grep -q "BOOTCLASSPATH" "$CPF" 2>/dev/null; then
+    echo "[Pivoted Root] derive_classpath failed ($(tail -n1 /data/derive_classpath.log)); using /data/zygote_classpath.env"
+    sed 's/^\([A-Z_]*\)=/export \1 /' /data/zygote_classpath.env 2>/dev/null | grep '^export' > "$CPF"
+fi
+ZENV=""
+while read -r kw name val; do
+    [ "$kw" = "export" ] && [ -n "$name" ] && ZENV="$ZENV $name=$val" && eval "$name=\$val"
+done < "$CPF"
+echo "[Pivoted Root] BOOTCLASSPATH: $(echo "$BOOTCLASSPATH" | tr ':' '\n' | grep -c .) jars, SYSTEMSERVERCLASSPATH: $(echo "$SYSTEMSERVERCLASSPATH" | tr ':' '\n' | grep -c .) jars"
+cp -f "$CPF" /data/zygote_classpath.used 2>/dev/null
 cp_missing=0
-for cpvar in BOOTCLASSPATH SYSTEMSERVERCLASSPATH STANDALONE_SYSTEMSERVER_JARS; do
-    cpval=$(grep -ao "${cpvar}=[^[:cntrl:]]*" /data/zygote_exec | head -n1 | cut -d= -f2)
-    for jar in $(echo "$cpval" | tr ':' ' '); do
-        [ -f "$jar" ] || { echo "[Pivoted Root] MISSING $cpvar jar: $jar"; cp_missing=$((cp_missing + 1)); }
-    done
+for jar in $(echo "$BOOTCLASSPATH:$SYSTEMSERVERCLASSPATH:$STANDALONE_SYSTEMSERVER_JARS" | tr ':' ' '); do
+    [ -f "$jar" ] || { echo "[Pivoted Root] MISSING classpath jar: $jar"; cp_missing=$((cp_missing + 1)); }
 done
 echo "[Pivoted Root] classpath check: $cp_missing missing"
-echo "[Pivoted Root] Launching LineageOS Zygote & SystemServer via zygote_exec..."
-exec /data/zygote_exec
+
+echo "[Pivoted Root] Launching Zygote & SystemServer via zygote_exec..."
+exec env -i ANDROID_SOCKET_zygote=3 ANDROID_SOCKET_usap_pool_primary=4 \
+    PATH=/system/bin:/system/xbin ANDROID_ROOT=/system ANDROID_DATA=/data ANDROID_STORAGE=/storage \
+    ANDROID_ART_ROOT=/apex/com.android.art ANDROID_I18N_ROOT=/apex/com.android.i18n \
+    ANDROID_TZDATA_ROOT=/apex/com.android.tzdata EXTERNAL_STORAGE=/sdcard \
+    ASEC_MOUNTPOINT=/mnt/asec ANDROID_ASSETS=/system/app $ZENV \
+    /data/zygote_exec
+

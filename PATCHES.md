@@ -81,3 +81,24 @@ fragments). It re-encodes the one `adr x2, envp` and fixes the PT_LOAD size. Und
 emulation, the rebuilt binary makes the same syscalls as the original apart from
 the classpath strings. Before launching, `master_inner.sh` now logs any classpath
 jar missing from the container.
+
+## Runtime classpaths (any GSI)
+`zygote_exec` is now built with `tools/build_zygote_exec.py --inherit-env`: the one
+`adr x2, envp` becomes a branch to a 4-instruction stub that passes the caller's
+environment to `execve`. `master_inner.sh` runs the mounted sdkext APEX's
+`derive_classpath` inside the container, as init does on a real boot. It then
+launches zygote with `env -i` plus the derived `BOOTCLASSPATH`,
+`SYSTEMSERVERCLASSPATH` and related variables. The classpaths always match the
+system image and APEX mix actually mounted. `assets/zygote_classpath.env` is only
+a fallback.
+
+## Google GSI (gsi_gms_arm64)
+Google's Android 17 GSI (`CP2A.260605.012`) ships Google-signed mainline modules,
+matching the host's, so the host's tethering APEX can be used without the
+networkstack signature conflict hit with LineageOS. `patch_smali.py` applies
+unchanged; the KeyGestureController screenshot patch reports "not needed".
+**The GMS GSI license forbids modifying or redistributing it.** Jars patched from it
+are built locally into `../google-gsi-overlay/` and passed to `build_apk.sh` via
+`EXTRA_ASSETS_DIR`. They are never committed. `mount_payload` now accepts Google's
+`com.google.android.<name>.apex` naming (compressed or not), and the payload cache
+is cleared whenever `system.raw` changes.

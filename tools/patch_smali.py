@@ -40,6 +40,8 @@ def edit(root, cls, sig, fn, desc):
     s, e = span
     body = lines[s + 1:e]
     new = fn(body)
+    if new == "SKIP":
+        print(f"  --  {cls}->{sig}  [{desc}: not needed in this build]"); return
     if new is None:
         FAIL.append(f"{cls}->{sig}: pattern not found ({desc})"); return
     lines[s + 1:e] = new
@@ -120,6 +122,8 @@ def appop_skip_missing_permission(body):
 def screenshot_null_obj(body):
     """MSG 5 (take screenshot) may arrive with obj==null: use arg1/arg2."""
     TSD = "Lcom/android/server/input/KeyGestureController$TakeScreenshotData;"
+    if not any(TSD in l for l in body):
+        return "SKIP"      # build already passes source/type via arg1/arg2
     for i, l in enumerate(body):
         if l.strip() == f"check-cast p1, {TSD}":
             k = max(j for j in range(i) if body[j].strip())
