@@ -204,6 +204,15 @@ def main(fw, svc):
     edit(svc, "com/android/server/power/PowerManagerService", "lowLevelReboot(Ljava/lang/String;)V",
          stub("void"), "guest can't reboot the phone")
 
+    # Boot-time dexopt calls into artd via binder (/apex/com.android.art/bin/artd),
+    # but the container never starts artd, so every single system package NPEs in
+    # ArtService.PrimaryDexopter.maybeCreateSdc and the SystemServer main thread
+    # sits in Watchdog.pauseForReason("dexopt") iterating thousands of packages.
+    # Skip the upgrade dexopt pass entirely; apps run interpreted (same as a
+    # first-boot before dexopt completes), the boot proceeds to phase 400+.
+    edit(svc, "com/android/server/pm/DexOptHelper", "performPackageDexOptUpgradeIfNeeded()V",
+         stub("void"), "skip boot dexopt (no artd in container)")
+
     edit(svc, "com/android/server/security/advancedprotection/AdvancedProtectionConfigLoader",
          "isFeatureFlagEnabled(Ljava/lang/String;)Z", unknown_flag_is_false,
          "unknown aconfig flag -> false (no flag storage in container)")
