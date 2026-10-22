@@ -143,6 +143,16 @@ def screenshot_null_obj(body):
             return body[:k] + repl + body[i + 1:]
     return None
 
+def unknown_flag_is_false(body):
+    """Container can't read Android 17 aconfig storage, so getFlagValue() is
+    null for every flag; treat unknown as disabled instead of throwing."""
+    for i, l in enumerate(body):
+        if '"Invalid feature flag: "' in l:
+            j = next(k for k in range(i + 1, len(body)) if body[k].strip())
+            if body[j].strip().startswith("invoke-static"):
+                return body[:j] + body[j + 1:]
+    return None
+
 def main(fw, svc):
     print("framework.jar")
     for sig in ["isUserUnlocked()Z", "isUserUnlocked(I)Z",
@@ -189,6 +199,10 @@ def main(fw, svc):
     edit(svc, "com/android/server/usb/UsbService$Lifecycle", "onBootPhase(I)V", stub("void"), "host owns USB")
     edit(svc, "com/android/server/power/PowerManagerService", "lowLevelReboot(Ljava/lang/String;)V",
          stub("void"), "guest can't reboot the phone")
+
+    edit(svc, "com/android/server/security/advancedprotection/AdvancedProtectionConfigLoader",
+         "isFeatureFlagEnabled(Ljava/lang/String;)Z", unknown_flag_is_false,
+         "unknown aconfig flag -> false (no flag storage in container)")
 
     print("\nmodified dex dirs:"); [print("  " + t) for t in sorted(TOUCHED)]
     if FAIL:

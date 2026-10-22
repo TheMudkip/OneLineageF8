@@ -35,6 +35,7 @@ those dependencies.
 | services | `AppOpService.createPermissionAppOpMapping` | skip ops whose permission is undefined instead of throwing |
 | services | `UserDataPreparer.prepareUserData`, `prepareUserDataLI` | no-op (no installd/vold) |
 | services | `PowerManagerService.lowLevelReboot` | no-op (guest must not reboot the phone) |
+| services | `AdvancedProtectionConfigLoader.isFeatureFlagEnabled` | unknown aconfig flag -> `false` instead of throwing (Android 17 flag storage isn't readable in the container) |
 
 Only the modified dex files are replaced (`services`: classes, classes2, classes3;
 `framework`: classes3). All other entries are byte-identical to the GSI.
