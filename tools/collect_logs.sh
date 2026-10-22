@@ -1,0 +1,40 @@
+#!/system/bin/sh
+# Collect OneLineage boot diagnostics into one file.
+#   adb push tools/collect_logs.sh /data/local/tmp/
+#   adb shell su -c "sh /data/local/tmp/collect_logs.sh"
+#   adb pull /data/local/tmp/ol_debug.txt
+STAGE=/data/local/tmp/lineage_stage
+OUT=/data/local/tmp/ol_debug.txt
+BB=$(ls /data/adb/ksu/bin/busybox /data/adb/magisk/busybox /data/adb/ap/bin/busybox 2>/dev/null | head -n1)
+[ -n "$BB" ] || BB=busybox
+sec() { echo; echo "================ $1"; }
+tailf() { sec "$1 (last ${2:-150} lines)"; [ -f "$1" ] && tail -n "${2:-150}" "$1" || echo "(missing)"; }
+{
+  sec "date / props"; date; getprop ro.product.model; getprop ro.build.display.id; getprop sys.boot_completed
+  echo "selinux: $(getenforce)"; echo "busybox: $BB"
+  sec "processes"
+  ps -A -o PID,PPID,USER,NAME,ARGS 2>/dev/null | grep -aiE "zygote|system_server|surfaceflinger|bootanim|servicemanager|vold|app_process|master_inner|unshare" | grep -v grep
+  SS=$(pidof system_server | awk '{print $1}')
+  Z=$(pidof zygote64 | awk '{print $1}')
+  echo "system_server=$SS zygote64=$Z"
+  sec "mount ns: host=$(readlink /proc/1/ns/mnt) ss=$( [ -n "$SS" ] && readlink /proc/$SS/ns/mnt) zyg=$( [ -n "$Z" ] && readlink /proc/$Z/ns/mnt)"
+  sec "df /data"; df -h /data
+  tailf $STAGE/takeover_app.log 200
+  tailf $STAGE/data/takeover.log 300
+  tailf $STAGE/data/anim.log 40
+  tailf $STAGE/data/vold.log 40
+  tailf $STAGE/data/idmap.log 20
+  tailf $STAGE/data/boot_failures.log 60
+  tailf /data/local/tmp/ui_activator.log 40
+  sec "logcat crash buffer"; logcat -d -b crash 2>/dev/null | tail -n 300
+  sec "logcat main/system: fatal + boot path (last 600)"
+  logcat -d -b main,system 2>/dev/null | grep -aE "FATAL|AndroidRuntime|Zygote|SystemServer|SystemServiceManager|PackageManager|ApexManager|ActivityManager: Start proc|Unable to parse|Exception|Watchdog|ServiceManager|art  |linker|init:.*(zygote|surfaceflinger)" | tail -n 600
+  if [ -n "$Z$SS" ]; then
+    P=${SS:-$Z}
+    sec "inside container ns (pid $P): rootfs check"
+    $BB nsenter -t $P -m sh -c 'ls /system/framework/services.jar /system/framework/framework.jar; getprop ro.build.version.sdk; ls /apex | head -80; cat /apex/apex-info-list.xml | head -c 400' 2>&1
+  fi
+  sec "tail of full logcat (last 400)"; logcat -d 2>/dev/null | tail -n 400
+} > $OUT 2>&1
+chmod 644 $OUT
+echo "wrote $OUT ($(wc -c < $OUT) bytes)"
