@@ -15,6 +15,11 @@ tailf() { sec "$1 (last ${2:-150} lines)"; [ -f "$1" ] && tail -n "${2:-150}" "$
   ls -l /system/bin/su /system/xbin/su /data/adb/ksud 2>&1
   sec "staged engine files (md5)"
   for f in services_patched.jar framework_patched.jar zygote_exec master_prepare.sh; do echo "$(md5sum $STAGE/$f 2>/dev/null | cut -c1-12)  $f"; done
+  sec "networking reference (host modules, BPF maps, guest connectivity startup)"
+  grep -o '<apex-info moduleName="com.android.\(tethering\|resolv\)"[^>]*' /apex/apex-info-list.xml 2>/dev/null | grep -o 'moduleName="[^"]*"\|versionCode="[^"]*"\|isActive="[^"]*"' | paste - - - 2>/dev/null
+  echo "-- /sys/fs/bpf/netd_shared:"; ls /sys/fs/bpf/netd_shared 2>&1 | tr '\n' ' '; echo
+  echo "-- guest connectivity / DNS startup lines:"
+  logcat -d -b main,system,crash 2>/dev/null | grep -aE "ConnectivityService|BpfNetMaps|DnsManager|DnsResolver|resolv|getUnstableInterface|NetworkStack|Tethering" | grep -av "Finsky" | tail -n 120
   sec "processes"
   ps -A -o PID,PPID,USER,NAME,ARGS 2>/dev/null | grep -aiE "zygote|system_server|surfaceflinger|bootanim|servicemanager|vold|app_process|master_inner|unshare" | grep -v grep
   SS=$(pidof system_server | awk '{print $1}')
