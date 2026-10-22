@@ -11,7 +11,15 @@ BUILD_DIR="${BUILD_DIR:-$PROJECT_DIR/build}"
 OUT_APK="${OUT_APK:-$PROJECT_DIR/build/OneLineage.apk}"
 [ -n "$JAVA_HOME" ] && export PATH="$JAVA_HOME/bin:$PATH"
 
-for f in "$SDK_TOOLS/aapt2" "$SDK_TOOLS/d8" "$SDK_TOOLS/zipalign" "$SDK_TOOLS/apksigner" "$PLATFORM_JAR"; do
+# Tools default to the SDK binaries; each can be overridden (e.g. on Linux with a
+# Windows SDK: AAPT2=<linux aapt2>, D8="java -cp .../lib/d8.jar com.android.tools.r8.D8",
+# APKSIGNER="java -jar .../lib/apksigner.jar", ZIPALIGN="python3 tools/zipalign.py").
+AAPT2="${AAPT2:-$SDK_TOOLS/aapt2}"
+D8="${D8:-$SDK_TOOLS/d8}"
+APKSIGNER="${APKSIGNER:-$SDK_TOOLS/apksigner}"
+ZIPALIGN="${ZIPALIGN:-$SDK_TOOLS/zipalign -p 4}"
+
+for f in "$PLATFORM_JAR"; do
     [ -e "$f" ] || { echo "missing: $f (set ANDROID_SDK / SDK_TOOLS / PLATFORM_JAR)"; exit 1; }
 done
 
@@ -22,10 +30,10 @@ mkdir -p "$BUILD_DIR/gen" "$BUILD_DIR/classes" "$BUILD_DIR/dex"
 cd "$PROJECT_DIR"
 
 echo "=== 2. Compiling resources with aapt2 ==="
-"$SDK_TOOLS/aapt2" compile --dir res -o "$BUILD_DIR/compiled_res.zip"
+$AAPT2 compile --dir res -o "$BUILD_DIR/compiled_res.zip"
 
 echo "=== 3. Linking resources with aapt2 ==="
-"$SDK_TOOLS/aapt2" link \
+$AAPT2 link \
     -I "$PLATFORM_JAR" \
     --manifest AndroidManifest.xml \
     -o "$BUILD_DIR/base.apk" \
@@ -34,14 +42,14 @@ echo "=== 3. Linking resources with aapt2 ==="
     -A assets
 
 echo "=== 4. Compiling Java sources ==="
-javac -source 1.8 -target 1.8 \
+javac --release 8 \
     -cp "$PLATFORM_JAR" \
     -d "$BUILD_DIR/classes" \
     src/com/wewaffles/onelineage/MainActivity.java \
     "$BUILD_DIR/gen/com/wewaffles/onelineage/R.java"
 
 echo "=== 5. Generating Dalvik Executable (classes.dex) with d8 ==="
-"$SDK_TOOLS/d8" \
+$D8 \
     --lib "$PLATFORM_JAR" \
     --output "$BUILD_DIR/dex" \
     "$BUILD_DIR/classes/com/wewaffles/onelineage"/*.class
@@ -52,7 +60,7 @@ zip -u "$BUILD_DIR/base.apk" classes.dex
 cd "$PROJECT_DIR"
 
 echo "=== 7. Aligning APK with zipalign ==="
-"$SDK_TOOLS/zipalign" -v -p 4 "$BUILD_DIR/base.apk" "$BUILD_DIR/aligned.apk"
+$ZIPALIGN "$BUILD_DIR/base.apk" "$BUILD_DIR/aligned.apk"
 
 KEYSTORE="$PROJECT_DIR/keystore/debug.keystore"
 if [ ! -f "$KEYSTORE" ]; then
@@ -68,7 +76,7 @@ if [ ! -f "$KEYSTORE" ]; then
         -dname "CN=OneLineage,O=WeWaffles,C=US"
 fi
 
-"$SDK_TOOLS/apksigner" sign \
+$APKSIGNER sign \
     --ks "$KEYSTORE" \
     --ks-pass pass:android \
     --ks-key-alias androiddebugkey \
