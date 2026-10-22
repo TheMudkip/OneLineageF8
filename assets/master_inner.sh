@@ -140,6 +140,30 @@ for jar in $(echo "$BOOTCLASSPATH:$SYSTEMSERVERCLASSPATH:$STANDALONE_SYSTEMSERVE
 done
 echo "[Pivoted Root] classpath check: $cp_missing missing"
 
+# Diagnostic: md5sums of the binaries the zygote is about to load. If the pivot
+# is clean these should match the GSI image; a host-side build id in a crash
+# dump then points at this list for the culprit.
+echo "[Pivoted Root] pivoted-env binaries (md5 of what app_process64 and zygote will load):"
+for f in /system/bin/app_process64 /system/lib64/libandroid_runtime.so \
+         /system/lib64/libart.so /apex/com.android.art/lib64/libart.so \
+         /system/framework/framework.jar /system/framework/services.jar \
+         /system/lib64/libbinder.so /system/lib64/libnativeloader.so; do
+    if [ -f "$f" ]; then
+        s=$(md5sum "$f" 2>/dev/null | cut -c1-12)
+        sz=$(stat -c %s "$f" 2>/dev/null)
+        echo "  $s  $sz  $f"
+    else
+        echo "  MISSING          $f"
+    fi
+done
+# Also show the actual loader namespace config
+echo "[Pivoted Root] /linkerconfig head (what the linker sees for the system namespace):"
+if [ -f /linkerconfig/ld.config.txt ]; then
+    grep -E "^(dir\.|namespace\.default\.search\.paths|namespace\.default\.permitted\.paths|namespace\.system\.search\.paths)" /linkerconfig/ld.config.txt | head -20
+else
+    ls /linkerconfig 2>&1 | head -5
+fi
+
 echo "[Pivoted Root] Launching Zygote & SystemServer via zygote_exec..."
 exec env -i ANDROID_SOCKET_zygote=3 ANDROID_SOCKET_usap_pool_primary=4 \
     PATH=/system/bin:/system/xbin ANDROID_ROOT=/system ANDROID_DATA=/data ANDROID_STORAGE=/storage \
