@@ -634,6 +634,10 @@ mount_payload "healthfitness" "com.android.healthfitness"
 mount_payload "ondevicepersonalization" "com.android.ondevicepersonalization"
 mount_payload "configinfrastructure" "com.android.configinfrastructure"
 mount_payload "bt" "com.android.bt"
+# Android 17: framework-telecom.jar / service-telecom.jar moved into the
+# telephonycore APEX. Samsung's copy doesn't ship them (One UI keeps telecom in
+# /system), so the guest must use the GSI's own telephonycore.
+mount_payload "telephonycore" "com.android.telephonycore"
 
 # Payload extractions above used the GSI's own /system/apex files. Now that the
 # images are cached, present the HOST's /system/apex to the container so the
