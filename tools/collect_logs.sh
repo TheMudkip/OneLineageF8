@@ -32,8 +32,18 @@ tailf() { sec "$1 (last ${2:-150} lines)"; [ -f "$1" ] && tail -n "${2:-150}" "$
   sec "logcat crash buffer"; logcat -d -b crash 2>/dev/null | tail -n 300
   sec "logcat main/system: fatal + boot path (last 600)"
   logcat -d -b main,system 2>/dev/null | grep -aE "FATAL|AndroidRuntime|Zygote|SystemServer|SystemServiceManager|PackageManager|ApexManager|ActivityManager: Start proc|Unable to parse|Exception|Watchdog|ServiceManager|art  |linker|init:.*(zygote|surfaceflinger)" | tail -n 600
-  if [ -n "$Z$SS" ]; then
-    P=${SS:-$Z}
+  # any process living in the container's mount namespace (surfaceflinger
+  # survives even when zygote/system_server are dead)
+  HOSTNS=$(readlink /proc/1/ns/mnt); CP=""
+  for p in $SS $Z $(pidof surfaceflinger) $(pidof bootanimation); do
+    [ -n "$p" ] && [ "$(readlink /proc/$p/ns/mnt)" != "$HOSTNS" ] && { CP=$p; break; }
+  done
+  if [ -n "$CP" ]; then
+    P=$CP
+    sec "container apex paths from apex-info-list (pid $P)"
+    $BB nsenter -t $P -m sh -c 'for f in $(grep -o " modulePath=\"[^\"]*\"" /apex/apex-info-list.xml | cut -d\" -f2); do ls -lL "$f" 2>&1 | head -1; done; echo; ls -la /system_ext /system_ext/apex /system/system_ext/apex 2>&1; mount | grep -E "system_ext|product/apex" ' 2>&1
+  fi
+  if [ -n "$CP" ]; then
     sec "inside container ns (pid $P): rootfs check"
     $BB nsenter -t $P -m sh -c 'ls /system/framework/services.jar /system/framework/framework.jar; getprop ro.build.version.sdk; ls /apex | head -80; cat /apex/apex-info-list.xml | head -c 400' 2>&1
   fi
