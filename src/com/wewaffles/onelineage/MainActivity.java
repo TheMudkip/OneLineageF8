@@ -62,10 +62,13 @@ public class MainActivity extends Activity {
     private static final String STAGE_DIR = "/data/local/tmp/lineage_stage";
     private static final String SYSTEM_RAW = STAGE_DIR + "/system.raw";
 
-    private static final String URL_VANILLA = "https://downloads.sourceforge.net/project/misterztr-gsi/LineageOS/Android%2016/LineageOS-23.2-20260524-VANILLA-EXT4-GSI.7z?use_mirror=autoselect";
-    private static final String URL_GAPPS = "https://downloads.sourceforge.net/project/misterztr-gsi/LineageOS/Android%2016/LineageOS-23.2-20260524-GAPPS-EXT4-GSI.7z?use_mirror=autoselect";
-    private static final long ESTIMATED_VANILLA_BYTES = 922022276L;
-    private static final long ESTIMATED_GAPPS_BYTES = 1167859370L;
+    // LineageOS 24.0 (Android 17, CP2A.260605.016) EXT4 arm64 GSI. Must match the
+    // host's Android 17 build: the container borrows the host's APEX modules.
+    // No LineageOS 24 GApps GSI has been published yet, so GAPPS uses the same image.
+    private static final String URL_VANILLA = "https://github.com/ods-releases/arm64/releases/download/lineage-24.0-20261016-UNOFFICIAL-arm64-gsi/lineage-24.0-20261016-UNOFFICIAL-arm64-gsi.img.tar.gz";
+    private static final String URL_GAPPS = URL_VANILLA;
+    private static final long ESTIMATED_VANILLA_BYTES = 1751441951L;
+    private static final long ESTIMATED_GAPPS_BYTES = 1751441951L;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -119,7 +122,7 @@ public class MainActivity extends Activity {
         cardFlavorVanilla.setOnClickListener(clickVanilla);
         cardFlavorGapps.setOnClickListener(clickGapps);
 
-        selectFlavor(Flavor.GAPPS);
+        selectFlavor(Flavor.VANILLA);
     }
 
     private void selectFlavor(Flavor flavor) {
@@ -135,7 +138,7 @@ public class MainActivity extends Activity {
                 tvDownloadDesc.setText("Vanilla: The lightweight option");
                 break;
             case GAPPS:
-                tvDownloadDesc.setText("MindTheGapps: LineageOS 23.2 + Google Play Store & Services.");
+                tvDownloadDesc.setText("No LineageOS 24 GApps GSI exists yet - this installs Vanilla.");
                 break;
         }
     }
@@ -288,7 +291,7 @@ public class MainActivity extends Activity {
                 "master_prepare.sh", "master_inner.sh",
                 "zygote_exec", "clean_apex_info_list.xml",
                 "services_patched.jar", "framework_patched.jar",
-                "7zz", "PermissionController_patched.apk"
+                "7zz"
             };
             File filesDir = getFilesDir();
             for (String asset : assets) {
@@ -313,6 +316,8 @@ public class MainActivity extends Activity {
                 try {
                     Runtime.getRuntime().exec(new String[]{
                         suBinary, "-c",
+                        // Android 17 branch: the S26/Android 16 PermissionController patch must not linger
+                        "rm -f " + filesDir.getAbsolutePath() + "/PermissionController_patched.apk " + STAGE_DIR + "/PermissionController_patched.apk; " +
                         "mkdir -p " + STAGE_DIR + " && " +
                         "for f in " + filesDir.getAbsolutePath() + "/*; do " +
                         "  base=$(basename \"$f\"); " +
@@ -453,7 +458,7 @@ public class MainActivity extends Activity {
                 // actual cause of "lineage_dl.7z: open failed: EACCES"). su (used below
                 // for extraction) can read the app's cache dir fine, same as
                 // extractAssets() already does for the other staged files.
-                final File targetArchive = new File(getCacheDir(), "lineage_dl.7z");
+                final File targetArchive = new File(getCacheDir(), downloadUrl.contains(".tar.gz") ? "lineage_dl.img.tar.gz" : "lineage_dl.7z");
 
                 appendLog("[NETWORK DOWNLOAD] Fetching " + flavor.name() + " edition directly via native HTTP engine...");
                 appendLog("URL: " + downloadUrl);
@@ -468,21 +473,25 @@ public class MainActivity extends Activity {
                     tvDownloadProgress.setText("Decompressing image with ARM64 7-Zip…");
                 });
 
-                appendLog("Extracting " + targetArchive.getAbsolutePath() + " via native 7zz...");
+                boolean isTarGz = targetArchive.getName().endsWith(".tar.gz");
+                appendLog("Extracting " + targetArchive.getAbsolutePath() + (isTarGz ? " via tar..." : " via native 7zz..."));
+                String unpack = isTarGz
+                        ? "tar -xzf " + targetArchive.getAbsolutePath() + " -C " + STAGE_DIR
+                        : STAGE_DIR + "/7zz x -y -o" + STAGE_DIR + " " + targetArchive.getAbsolutePath();
                 String extractCmd = "rm -f " + STAGE_DIR + "/*.img " + SYSTEM_RAW + "; " +
-                                   STAGE_DIR + "/7zz x -y -o" + STAGE_DIR + " " + targetArchive.getAbsolutePath() + " && " +
+                                   unpack + " && " +
                                    "mv -f " + STAGE_DIR + "/*.img " + SYSTEM_RAW + " && " +
                                    "rm -f " + targetArchive.getAbsolutePath() + " && chmod 644 " + SYSTEM_RAW;
                 int extRet = runRootCmdDrained(extractCmd);
                 if (extRet != 0 || !new File(SYSTEM_RAW).exists()) {
-                    throw new Exception("7zz extraction failed (exit " + extRet + ") - system.raw was not produced");
+                    throw new Exception("Extraction failed (exit " + extRet + ") - system.raw was not produced");
                 }
 
                 appendLog("✓ Extraction complete -> system.raw ready!");
 
                 mainHandler.post(() -> {
                     pbDownload.setVisibility(View.GONE);
-                    tvDownloadProgress.setText("LineageOS 23.2 (" + flavor.name() + ") installed successfully!");
+                    tvDownloadProgress.setText("LineageOS 24.0 (" + flavor.name() + ") installed successfully!");
                     btnDownloadLineage.setEnabled(true);
                 });
                 setLogStatus("Ready");
@@ -568,7 +577,7 @@ public class MainActivity extends Activity {
                     // truncating frees the backing blocks immediately even though rm -f
                     // alone would leave them held open by that loop device.
                     "truncate -s 0 " + SYSTEM_RAW + " 2>/dev/null || true; " +
-                    "rm -f " + SYSTEM_RAW + " " + STAGE_DIR + "/*.img " + STAGE_DIR + "/*.7z " + STAGE_DIR + "/*.img.tmp; " +
+                    "rm -f " + SYSTEM_RAW + " " + STAGE_DIR + "/*.img " + STAGE_DIR + "/*.7z " + STAGE_DIR + "/*.tar.gz " + STAGE_DIR + "/*.img.tmp; " +
                     "rm -rf " + STAGE_DIR + "/data " + STAGE_DIR + "/rootfs; " +
                     "mkdir -p " + STAGE_DIR + "/rootfs; " +
                     "if [ -f " + SYSTEM_RAW + " ]; then echo 'WARNING: system.raw still present!'; else echo 'Container unmounted, data wiped, and storage freed.'; fi";
@@ -604,7 +613,7 @@ public class MainActivity extends Activity {
             appendLog("ERROR: Root privilege required to boot LineageOS!");
             return;
         }
-        appendLog("\n[START] Preparing LineageOS 23.2 takeover...");
+        appendLog("\n[START] Preparing LineageOS 24.0 takeover...");
         setLogStatus("Switching…");
         executor.execute(() -> {
             try {

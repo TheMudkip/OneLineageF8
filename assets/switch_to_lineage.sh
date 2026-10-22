@@ -20,7 +20,7 @@ set_prop() {
 
 BACKUP_DIR="/data/local/tmp/lineage_backups"
 
-echo "=== LINEAGEOS 23.2 TAKEOVER STARTING ==="
+echo "=== LINEAGEOS 24.0 TAKEOVER STARTING ==="
 
 # Put SELinux in permissive mode for the duration of the takeover. The guest
 # userspace is a foreign, unlabelled-for-this-policy userspace: its

@@ -75,6 +75,12 @@ if [ -d /system_ext/apex ]; then
     mkdir -p "$ROOTFS/system_ext/apex"
     mount | grep -q "$ROOTFS/system_ext/apex " || $BB mount --bind /system_ext/apex "$ROOTFS/system_ext/apex"
 fi
+# Android 17 Samsung builds also preinstall an APEX on /product
+# (com.google.android.gmssystem). The GSI's /product -> /system/product, so bind
+# the host's /product/apex there or PMS can't parse the path apexd reports.
+if [ -d /product/apex ] && [ -d "$ROOTFS/system/product/apex" ]; then
+    mount | grep -q "$ROOTFS/system/product/apex " || $BB mount --bind /product/apex "$ROOTFS/system/product/apex"
+fi
 mount | grep -q "$ROOTFS/mnt " || $BB mount --rbind /mnt "$ROOTFS/mnt"
 if [ -f "$STAGE/services_patched.jar" ]; then
     $BB umount -l "$ROOTFS/system/framework/services.jar" 2>/dev/null || true
@@ -597,12 +603,13 @@ mount_payload() {
     $BB umount -l "$DEST" 2>/dev/null || true
     LOOP=$($BB losetup -f)
     $BB losetup "$LOOP" "$IMG"
-    $BB mount -t ext4 -o ro "$LOOP" "$DEST"
-    echo "Direct mounted $NAME on $LOOP -> $DEST"
+    FSTYPE=ext4
+    $BB mount -t ext4 -o ro "$LOOP" "$DEST" 2>/dev/null || { FSTYPE=erofs; mount -t erofs -o ro "$LOOP" "$DEST"; }
+    echo "Direct mounted $NAME ($FSTYPE) on $LOOP -> $DEST"
     for vdir in "$ROOTFS/apex/${TARGET}"@*; do
         if [ -d "$vdir" ]; then
        $BB umount -l "$vdir" 2>/dev/null || true
-       $BB mount -t ext4 -o ro "$LOOP" "$vdir"
+       mount -t "$FSTYPE" -o ro "$LOOP" "$vdir"
        echo "Direct mounted $NAME on $LOOP -> $vdir"
         fi
     done
@@ -670,9 +677,10 @@ if [ -f "$STAGE/PermissionController_patched.apk" ]; then
         $BB mount --bind "$STAGE/PermissionController_patched.apk" "$PERM_APK" 2>/dev/null && echo "Bound PermissionController_patched.apk (late) -> $PERM_APK"
     done
 else
-    echo "!!! WARNING: PermissionController_patched.apk missing from $STAGE"
-    echo "!!! Samsung's PermissionController will crash every runtime-permission dialog"
-    echo "!!! (android.permission.RANGING not defined by platform)"
+    # Android 17 / LineageOS 24 defines android.permission.RANGING unconditionally
+    # (23.2 hid it behind a disabled feature flag), so the host's stock
+    # PermissionController is used as-is.
+    echo "Using host PermissionController (no patch needed on LineageOS 24)"
 fi
 
 echo "=== ALL MOUNTS PREPARED SUCCESSFULLY ==="

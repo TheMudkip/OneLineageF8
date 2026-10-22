@@ -1,5 +1,12 @@
 # OneLineage
 
+> ## Android 17 / Galaxy Z Fold 8 branch (`android17`)
+>
+> This fork targets **LineageOS 24.0 (Android 17)** on a **Galaxy Z Fold 8 (SM-F971U)** running One UI 9.
+> The patched framework jars were rebuilt for the 24.0 GSI. See [PATCHES.md](PATCHES.md) for what each
+> patch does and how to regenerate them. **Untested on hardware so far.**
+
+
 Hot-switch between stock **One UI** and a **LineageOS 23.2 (Android 16) GSI** on a rooted Samsung phone, with no reflashing and no second partition. OneLineage stages the GSI under `/data/local/tmp`, pivots into it as a container with its own zygote and system_server, and can hand the screen back to One UI.
 
 If something isn't working and you have a fix feel free to make a pr!
