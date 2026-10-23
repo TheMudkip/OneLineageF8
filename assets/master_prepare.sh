@@ -604,17 +604,27 @@ chmod 755 "$STAGE/data/local/tmp/net_fix.sh" 2>/dev/null || true
 
 cat > "$STAGE/data/local/tmp/app_storage_loop.sh" <<'APPLOOP'
 #!/system/bin/sh
-# Watches for installs/removals, gives the new package its data dirs, and makes
-# the launcher re-query so the app actually shows up.
+# Pre-creates per-package data dirs so zygote fork-and-specialize can bind
+# /data_mirror/data_de/null/0/<pkg> -> /data/user_de/0/<pkg> without the
+# source-ENOENT -> JNI FatalError -> zygote death sequence we hit on
+# every app whose dir doesn't exist yet. Runs tight during boot (direct-
+# boot-aware system apps like MediaProvider, DownloadProvider must have
+# their dirs the moment PMS registers them, which is well before
+# sys.boot_completed) and backs off once boot completes.
 last=""
+booted=0
 while true; do
-    sleep 10
-    case "$(getprop sys.boot_completed)" in 1) ;; *) continue ;; esac
-    netout=$(/system/bin/sh /data/local/tmp/net_fix.sh 2>/dev/null)
-    [ -n "$netout" ] && echo "$(date) $netout" >> /data/app_storage.log
+    if [ "$booted" = 0 ]; then
+        sleep 1
+        case "$(getprop sys.boot_completed)" in 1) booted=1 ;; esac
+    else
+        sleep 10
+        netout=$(/system/bin/sh /data/local/tmp/net_fix.sh 2>/dev/null)
+        [ -n "$netout" ] && echo "$(date) $netout" >> /data/app_storage.log
+    fi
     cur=$(md5sum /data/system/packages.list 2>/dev/null | cut -d' ' -f1)
     out=$(/system/bin/sh /data/local/tmp/ensure_app_storage.sh 2>/dev/null)
-    if [ -n "$last" ] && { [ "$cur" != "$last" ] || [ -n "$out" ]; }; then
+    if [ "$booted" = 1 ] && [ -n "$last" ] && { [ "$cur" != "$last" ] || [ -n "$out" ]; }; then
         # A package appeared or went away. LauncherApps caches the app list, so
         # something installed from Aurora or Play Store is missing from both the
         # drawer and app search until the launcher re-queries. Restarting the
