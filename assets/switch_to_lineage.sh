@@ -255,6 +255,16 @@ kill -9 $(pidof media.codec) $(pidof media.metrics) 2>/dev/null || true
 # vendor HAL.
 setprop ctl.stop wificond 2>/dev/null || true
 kill -9 $(pidof wificond) 2>/dev/null || true
+
+# Same handover for idmap2d (the "idmap" binder service). The guest's
+# OverlayManagerService asks for it to build idmaps for SystemUI's fabricated
+# Monet overlays (/data/resource-cache/*.frro). If the request reaches the
+# HOST's idmap2d, the idmap files land in the host's /data/resource-cache, not
+# the guest's, so every guest process fails to load them on every resource
+# lookup and logs a full stack trace (~40k lines/min) - the main source of the
+# idle CPU load and heat. The guest's own idmap2d starts in master_inner.sh.
+setprop ctl.stop idmap2d 2>/dev/null || true
+kill -9 $(pidof idmap2d) 2>/dev/null || true
 sleep 1
 
 # Suppress the host zygote only, so Samsung init does not resurrect it

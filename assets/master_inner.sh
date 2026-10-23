@@ -80,6 +80,23 @@ echo "[Pivoted Root] Starting LineageOS wificond..."
 /system/bin/wificond > /data/wificond.log 2>&1 &
 WIFICOND_PID=$!
 echo "[Pivoted Root] wificond PID: $WIFICOND_PID"
+
+# Guest idmap2d (see switch_to_lineage.sh): writes idmaps for the guest's
+# fabricated theme overlays into the guest's /data/resource-cache.
+if [ -x /system/bin/idmap2d ]; then
+    echo "[Pivoted Root] Starting guest idmap2d..."
+    /system/bin/idmap2d > /data/idmap2d.log 2>&1 &
+    echo "[Pivoted Root] idmap2d PID: $!"
+fi
+# Guest artd: system_server's ArtService dexopts through it. Without it every
+# app runs unoptimized (slow, more CPU). Boot-time dexopt stays skipped
+# (patch_smali), so this only serves per-app and background compilation.
+if [ -x /apex/com.android.art/bin/artd ]; then
+    echo "[Pivoted Root] Starting guest artd..."
+    mkdir -p /data/misc/apexdata/com.android.art/dalvik-cache
+    /apex/com.android.art/bin/artd > /data/artd.log 2>&1 &
+    echo "[Pivoted Root] artd PID: $!"
+fi
 sleep 1
 
 # Overlay idmaps. idmap2 refuses the GSI's product overlays because framework-res
