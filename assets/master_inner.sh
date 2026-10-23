@@ -91,9 +91,19 @@ fi
 # Guest artd: system_server's ArtService dexopts through it. Without it every
 # app runs unoptimized (slow, more CPU). Boot-time dexopt stays skipped
 # (patch_smali), so this only serves per-app and background compilation.
+# IMPORTANT: /data/misc/apexdata must stay system:system 0771. Creating any
+# child dir here as root would leave the parent root-owned on first run and
+# NetworkStatsServiceInitializer in system_server (uid 1000) then crashes
+# system_server with:
+#   IllegalStateException: Cannot write into stats data directory:
+#     /data/misc/apexdata/com.android.tethering/netstats
+# So fix up the parent before starting artd (master_prepare pre-creates the
+# tethering/netstats dir on disk, we only need to repair ownership here).
 if [ -x /apex/com.android.art/bin/artd ]; then
     echo "[Pivoted Root] Starting guest artd..."
     mkdir -p /data/misc/apexdata/com.android.art/dalvik-cache
+    chown -R 1000:1000 /data/misc/apexdata 2>/dev/null || true
+    chmod 0771 /data/misc/apexdata 2>/dev/null || true
     /apex/com.android.art/bin/artd > /data/artd.log 2>&1 &
     echo "[Pivoted Root] artd PID: $!"
 fi

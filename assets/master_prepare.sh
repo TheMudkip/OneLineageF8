@@ -268,6 +268,22 @@ mkdir -p "$STAGE/data/misc/bluedroid" "$STAGE/data/misc/bluetooth" 2>/dev/null
 chown 1002:1002 "$STAGE/data/misc/bluedroid" "$STAGE/data/misc/bluetooth" 2>/dev/null || true
 chmod 0770 "$STAGE/data/misc/bluedroid" "$STAGE/data/misc/bluetooth" 2>/dev/null || true
 
+# APEX data dirs. On a real boot apexd creates these when it activates each
+# module (/data/misc/apexdata/<module>/...). The container loop-mounts the
+# GSI's APEXes directly, so apexd never touches them. system_server then dies
+# in NetworkStatsServiceInitializer with "Cannot write into stats data
+# directory: /data/misc/apexdata/com.android.tethering/netstats", because the
+# tethering APEX is 'com.android.tethering' in the GSI (host apexd creates
+# only 'com.google.android.tethering'). Pre-create the dirs with the system
+# ownership and permissions apexd would have applied.
+mkdir -p "$STAGE/data/misc/apexdata/com.android.tethering/netstats" \
+         "$STAGE/data/misc/apexdata/com.android.art/dalvik-cache" \
+         "$STAGE/data/misc/apexdata/com.android.permission" \
+         "$STAGE/data/misc/apexdata/com.android.wifi" \
+         "$STAGE/data/misc/apexdata/com.android.appsearch" 2>/dev/null
+chown -R 1000:1000 "$STAGE/data/misc/apexdata" 2>/dev/null || true
+chmod 0771 "$STAGE/data/misc/apexdata" 2>/dev/null || true
+
 # SELinux labels matter just as much as modes here. Every directory below lives
 # under /data/local/tmp, so it is created as u:object_r:shell_data_file:s0. The
 # guest's system_server runs in u:r:system_server:s0 (Samsung policy) and is
