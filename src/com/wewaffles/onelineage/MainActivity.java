@@ -667,6 +667,33 @@ public class MainActivity extends Activity {
             appendLog("ERROR: Root privilege required to restore One UI!");
             return;
         }
+        // When this activity is running inside the guest, calling `su` sends the
+        // request through KernelSU's su binary and KernelSU tries to prompt its
+        // manager app (me.weishu.kernelsu) for approval. The guest doesn't have
+        // KernelSU Manager installed; zygote's fork-and-specialize for it dies
+        // on `/data_mirror/data_de/null/0/me.weishu.kernelsu` ENOENT and takes
+        // the whole guest down with a JNI FatalError. A reboot is a clean exit
+        // in that case - the container's state is already in /data/local/tmp,
+        // nothing to persist here.
+        boolean inGuest = !"samsung".equalsIgnoreCase(android.os.Build.MANUFACTURER);
+        if (inGuest) {
+            appendLog("\n[START] Running inside the guest - rebooting to return to One UI...");
+            setLogStatus("Rebooting…");
+            executor.execute(() -> {
+                try {
+                    // Try root first; if it isn't granted here (common in guest),
+                    // fall back to the ActivityManager reboot API via `svc power`.
+                    Runtime.getRuntime().exec(new String[]{suBinary, "-c", "reboot"}).waitFor();
+                } catch (Exception ignored) {}
+                try {
+                    Runtime.getRuntime().exec(new String[]{"sh", "-c", "svc power reboot || reboot"}).waitFor();
+                } catch (Exception e) {
+                    appendLog("Reboot error: " + e.getMessage());
+                    setLogStatus("Error");
+                }
+            });
+            return;
+        }
         appendLog("\n[START] Restoring One UI and resetting display...");
         setLogStatus("Restoring…");
         executor.execute(() -> {

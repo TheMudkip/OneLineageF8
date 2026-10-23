@@ -213,6 +213,18 @@ def main(fw, svc):
     edit(svc, "com/android/server/pm/DexOptHelper", "performPackageDexOptUpgradeIfNeeded()V",
          stub("void"), "skip boot dexopt (no artd in container)")
 
+    # AppDataHelper.prepareAppDataPostCommitLIF calls SMS.prepareAppDataAfterInstall
+    # which calls IVold.fixupAppDir. The guest's vold has no idea about our bound
+    # /data/media/0 (not an emulated vold volume), so fixupAppDir returns -22 EINVAL
+    # and every install logs:
+    #   E StorageManagerService: Failed to fixup app dir for <pkg>
+    #   android.os.ServiceSpecificException: (code -22)
+    # ensure_app_storage.sh creates /data/media/0/Android/data|media|obb/<pkg> with
+    # the right ext_data_rw gid in the background, so this call isn't carrying its
+    # weight for us. Stub it to void.
+    edit(svc, "com/android/server/StorageManagerService", "fixupAppDir(Ljava/lang/String;)V",
+         stub("void"), "ensure_app_storage.sh owns the per-app ext dir setup")
+
     # AMS.finishBooting -> ZygoteProcess.bootCompleted() opens a client socket to
     # /dev/socket/zygote to tell zygote to leave preload mode. In our pivoted
     # container, the GSI's zygote wires its socket onto fd 3 from zygote_exec but
