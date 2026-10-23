@@ -733,6 +733,24 @@ if [ -f "$NOBPF_OVERLAY" ]; then
     setprop persist.sys.phh.tethering.nobpf 1 2>/dev/null || true
     getprop persist.sys.phh.tethering.nobpf | awk '{print "persist.sys.phh.tethering.nobpf = " $0}'
     mount_payload "tethering" "com.android.tethering"
+    # BpfNetMaps.setL4sEnabled() invokes BpfBoolean.set() on sL4sEnabledMap, which
+    # is never populated when the nobpf overlay has disabled BPF-map setup. The
+    # overlay stubs the main netd path but leaves this L4S toggle, so later in
+    # boot ConnectivityService.handleNetworkL4sChanged() NPEs on the ConnectivityServiceThread
+    # and takes system_server with it (seen at phase 550, right before BOOT_COMPLETED).
+    # Overlay a patched service-connectivity.jar that returns-void from setL4sEnabled.
+    # Mount paths: the APEX exports /javalib/service-connectivity.jar at both
+    # /apex/com.android.tethering/javalib/service-connectivity.jar and the
+    # versioned @NNNN mount. The bind must sit on the resolved mount point.
+    if [ -f "$STAGE/service-connectivity_patched.jar" ]; then
+        for apex_dir in "$ROOTFS/apex/com.android.tethering" "$ROOTFS"/apex/com.android.tethering@*; do
+            jar="$apex_dir/javalib/service-connectivity.jar"
+            if [ -f "$jar" ] && ! mount | grep -q " $jar "; then
+                $BB mount --bind "$STAGE/service-connectivity_patched.jar" "$jar" && \
+                    echo "Bound service-connectivity_patched.jar -> $jar (L4S null-guard)"
+            fi
+        done
+    fi
 elif ls "$ROOTFS/system/apex/com.google.android.tethering"* >/dev/null 2>&1 \
    && [ -e "$BPF/map_netd_uid_permission_map" ] && [ -e "$BPF/map_netd_uid_permission_chunk_map" ]; then
     echo "tethering: using the GSI's Google-signed module (host pins the maps it needs)"
