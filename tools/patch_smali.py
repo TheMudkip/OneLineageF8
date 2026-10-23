@@ -213,6 +213,19 @@ def main(fw, svc):
     edit(svc, "com/android/server/pm/DexOptHelper", "performPackageDexOptUpgradeIfNeeded()V",
          stub("void"), "skip boot dexopt (no artd in container)")
 
+    # AMS.finishBooting -> ZygoteProcess.bootCompleted() opens a client socket to
+    # /dev/socket/zygote to tell zygote to leave preload mode. In our pivoted
+    # container, the GSI's zygote wires its socket onto fd 3 from zygote_exec but
+    # doesn't bind it in the filesystem (init.rc normally does the bind, and we
+    # don't run init). The connect fails with ENOENT; the resulting
+    # RuntimeException propagates out of WMS.performEnableScreen on the
+    # android.display handler thread and kills system_server right before
+    # BOOT_COMPLETED broadcasts. Stubbing the public entry makes finishBooting
+    # proceed; apps are already spawning fine from fd 3 and this call only
+    # signals zygote to drop its lazy-boot heuristics.
+    edit(fw, "android/os/ZygoteProcess", "bootCompleted()V",
+         stub("void"), "zygote socket not bound to fs path in container")
+
     edit(svc, "com/android/server/security/advancedprotection/AdvancedProtectionConfigLoader",
          "isFeatureFlagEnabled(Ljava/lang/String;)Z", unknown_flag_is_false,
          "unknown aconfig flag -> false (no flag storage in container)")
