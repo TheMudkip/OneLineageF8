@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.wewaffles.onelineage"
-    android:versionCode="37"
-    android:versionName="6.0-g17.1">
+    android:versionCode="38"
+    android:versionName="6.0-g17.2">
 
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="34" />
 

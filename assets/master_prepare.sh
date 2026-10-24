@@ -778,8 +778,20 @@ if [ -f "$NOBPF_OVERLAY" ]; then
         done
     fi
 elif ls "$ROOTFS/system/apex/com.google.android.tethering"* >/dev/null 2>&1 \
-   && [ -e "$BPF/map_netd_uid_permission_map" ] && [ -e "$BPF/map_netd_uid_permission_chunk_map" ]; then
+   && ( [ -e "$BPF/map_netd_uid_permission_map" ] || [ -e "$BPF/map_netd_uid_permission_chunk_map" ] ); then
     echo "tethering: using the GSI's Google-signed module (host pins the maps it needs)"
+    # The host-side uid-permission map comes in two generations:
+    #   map_netd_uid_permission_map       (one key = UID, older BPF layout)
+    #   map_netd_uid_permission_chunk_map (sharded, used by Android 17 AOSP)
+    # The Fold 8 kernel pins only the sharded form; older devices still pin
+    # both. GSI's BpfNetMaps.getUidPermission*Map() each tolerate ENOENT (logs
+    # "Cannot open uid permission map" and returns null), so needing just one
+    # of the two is sufficient to boot. Requiring BOTH would wrongly fall back
+    # to the host tethering module here, and the host's Samsung Android 15
+    # DnsManager (which still calls IDnsResolver.getUnstableInterface) then
+    # throws UnsupportedOperationException ("reserved by com.android.tethering
+    # module") inside ConnectivityService.<init>, which DnsManager's try/catch
+    # doesn't cover - fatal in system_server, boot stuck on the animation.
     mount_payload "tethering" "com.android.tethering"
 else
     echo "tethering: using the host's module"
